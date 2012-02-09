@@ -43,6 +43,35 @@ describe Jasmine::Headless::Options do
       options[:colors].should be_true
       options[:jasmine_config].should == 'test'
     end
+
+    context 'legacy reporter' do
+      let(:file) { 'file' }
+
+      before do
+        options.expects(:warn)
+      end
+
+      it 'should add a legacy reporter' do
+        options[:reporters] = []
+
+        options.process_option("--report", file)
+
+        options[:reporters].should == [ [ 'File', file ], [ 'Console' ] ]
+      end
+    end
+
+    context 'short reporter' do
+      let(:reporter) { 'reporter' }
+      let(:file) { 'file' }
+
+      it 'should add a reporter' do
+        options[:reporters] = []
+
+        options.process_option("--format", "#{reporter}:#{file}")
+
+        options[:reporters].should == [ [ reporter, file ] ]
+      end
+    end
   end
 
   describe '#read_defaults_files' do
@@ -110,8 +139,56 @@ describe Jasmine::Headless::Options do
       end
     end
 
+    let(:test_reporter) { 'TestReporter' }
+    let(:file) { 'file' }
+
+    context 'no reporters' do
+      it 'should have the default reporter' do
+        options[:reporters].should == [ [ 'Console' ] ]
+      end
+    end
+
+    context 'one reporter' do
+      context 'stdout' do
+        before do
+          ARGV.replace([ "--format", test_reporter ])
+        end
+
+        it 'should have the new reporter on stdout' do
+          options[:reporters].should == [ [ test_reporter ] ]
+
+          options.reporters.should == [ [ test_reporter, 'stdout' ] ]
+        end
+      end
+
+      context 'file' do
+        before do
+          ARGV.replace([ "--format", test_reporter, '--out', file ])
+        end
+
+        it 'should have the new reporter on stdout' do
+          options[:reporters].should == [ [ test_reporter, file ] ]
+
+          options.reporters.should == [ [ test_reporter, 'report:0', file ] ]
+        end
+      end
+    end
+
     after do
       ARGV.replace(@argv)
     end
+  end
+
+  describe '#file_reporters' do
+    subject { options.file_reporters }
+
+    let(:stdout_reporter) { [ 'Console', 'stdout' ] }
+    let(:file_reporter) { [ 'File', 'report:0', 'file' ] }
+
+    before do
+      options.stubs(:reporters).returns([ stdout_reporter, file_reporter ])
+    end
+
+    it { should == [ file_reporter ] }
   end
 end

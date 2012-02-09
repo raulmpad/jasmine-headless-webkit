@@ -14,7 +14,7 @@ require 'jasmine/headless/task'
 
 Jasmine::Headless::Task.new
 
-PLATFORMS = %w{1.8.7 1.9.2 ree 1.9.3-rc1}
+PLATFORMS = %w{1.9.2 1.9.3}
 
 def rvm_bundle(command = '')
   Bundler.with_clean_env do
@@ -30,6 +30,7 @@ namespace :spec do
   task :platforms do
     rvm_bundle
     rvm_bundle "exec rspec spec"
+    rvm_bundle "exec cucumber"
     raise SpecError.new if $?.exitstatus != 0
   end
 end

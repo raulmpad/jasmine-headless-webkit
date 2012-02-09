@@ -18,6 +18,7 @@ Runner::Runner() : QObject()
   , usedConsole(false)
   , isFinished(false)
   , useColors(false)
+  , quiet(false)
   {
   page.settings()->enablePersistentStorage();
   ticker.setInterval(TIMER_TICK);
@@ -62,17 +63,17 @@ void Runner::handleError(const QString &message, int lineNumber, const QString &
 
 void Runner::loadSpec()
 {
-  if (reportFileName.isEmpty()) {
-    outputFile = 0;
-    ts = 0;
-  } else {
-    outputFile = new QFile(reportFileName);
-    outputFile->open(QIODevice::WriteOnly);
+  QVectorIterator<QString> iterator(reportFiles);
 
-    ts = new QTextStream(outputFile);
+  while (iterator.hasNext()) {
+    QFile *outputFile = new QFile(iterator.next());
+    outputFile->open(QIODevice::WriteOnly);
+    outputFiles.enqueue(outputFile);
   }
 
-  page.mainFrame()->load(runnerFiles.dequeue());
+  QString runnerFile = runnerFiles.dequeue();
+
+  page.mainFrame()->load(runnerFile);
   ticker.start();
 }
 
@@ -104,8 +105,8 @@ void Runner::hasSpecFailure() {
   _hasSpecFailure = true;
 }
 
-void Runner::reportFile(const QString &file) {
-  reportFileName = file;
+void Runner::setReportFiles(QStack<QString> &files) {
+  reportFiles = files;
 }
 
 void Runner::timerPause() {
@@ -120,6 +121,22 @@ void Runner::ping() {
   runs = 0;
 }
 
+void Runner::setSeed(QString s) {
+  seed = s;
+}
+
+void Runner::setQuiet(bool q) {
+  quiet = q;
+}
+
+QString Runner::getSeed() {
+  return seed;
+}
+
+bool Runner::isQuiet() {
+  return quiet;
+}
+
 void Runner::print(const QString &fh, const QString &content) {
   if (fh == "stdout") {
     std::cout << qPrintable(content);
@@ -131,14 +148,18 @@ void Runner::print(const QString &fh, const QString &content) {
     std::cerr.flush();
   }
 
-  if (fh == "report" && outputFile) {
-    *ts << qPrintable(content);
-    ts->flush();
+  if (fh.contains("report")) {
+    int index = (int)fh.split(":").last().toUInt();
+
+    QTextStream ts(outputFiles.at(index));
+    ts << qPrintable(content);
+    ts.flush();
   }
 }
 
 void Runner::finishSuite() {
   isFinished = true;
+  runs = 0;
 }
 
 void Runner::timerEvent() {
@@ -147,9 +168,9 @@ void Runner::timerEvent() {
   if (hasErrors && runs > 2)
     QApplication::instance()->exit(1);
 
-  if (isFinished) {
-    if (outputFile) {
-      outputFile->close();
+  if (isFinished && runs > 2) {
+    while (!outputFiles.isEmpty()) {
+      outputFiles.dequeue()->close();
     }
 
     int exitCode = 0;

@@ -12,7 +12,7 @@
   <body>
     <script type="text/javascript">
       jasmine.getEnv().console = {
-        log: function(msg) { JHW.stdout.puts(msg) }
+        log: function(msg) { JHW.print('stdout', msg + "\n"); }
       }
 
       window._onload = window.onload;
@@ -23,7 +23,7 @@
         }
 
         if (window.JHW) {
-          jasmine.getEnv().addReporter(new jasmine.HeadlessConsoleReporter());
+          <%= jhw_reporters %>
         } else {
           types = [ 'HtmlReporter', 'TrivialReporter' ];
 
@@ -34,6 +34,39 @@
               break;
             }
           }
+
+          var location = window.location.href;
+
+          var getLastModified = function(callback) {
+            var http = new XMLHttpRequest();
+            var header;
+
+            http.open('HEAD', location, true);
+
+            http.onreadystatechange = function() {
+              console.log(http);
+              console.log(http.getResponseHeader('Last-Modified'));
+              callback(http.getResponseHeader('Last-Modified'));
+            };
+            http.send();
+          }
+
+          getLastModified(function(currentLastModified) {
+            var checker;
+            checker = function() {
+              setTimeout(function() {
+                getLastModified(function(newLastModified) {
+                  if (currentLastModified != newLastModified) {
+                    setTimeout(function() { window.location.reload(); }, 1000);
+                  } else {
+                    checker();
+                  }
+                });
+              }, 3000);
+            };
+
+            checker();
+          });
         }
 
         jasmine.getEnv().execute();

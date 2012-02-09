@@ -26,47 +26,74 @@ if window.JHW
       console.log(data)
       data
 
+  puts = (message) ->
+    JHW.print('stdout', message + "\n")
+
+  warn = (message) ->
+    puts(message) if !JHW.isQuiet()
+
+  # handle unloading
   window.onbeforeunload = (e) ->
     e = e || window.event
 
     JHW.hasError()
-    JHW.stdout.puts('The code tried to leave the test page. Check for unhandled form submits and link clicks.')
+    warn "The code tried to leave the test page. Check for unhandled form submits and link clicks."
 
-    if e
-      e.returnValue = 'string'
+    e.returnValue = 'string' if e
 
     return 'string'
 
-  window.confirm = (message) ->
-    JHW.stderr.puts("#{"[confirm]".foreground('red')} jasmine-headless-webkit can't handle confirm() yet! You should mock window.confirm. Returning true.")
-    true
-
-  window.alert = (message) ->
-    JHW.stderr.puts("[alert] ".foreground('red') + message)
-
+  # script errors
   JHW._hasErrors = false
   JHW._handleError = (message, lineNumber, sourceURL) ->
-    JHW.stderr.puts(message)
+    JHW.print('stderr', message + "\n")
     JHW._hasErrors = true
     false
 
-  JHW._setColors = (useColors) ->
-    Intense.useColors = useColors
+  # dialogs
+  window.confirm = ->
+    warn "#{"[confirm]".foreground('red')} You should mock window.confirm. Returning true."
 
-  createHandle = (handle) ->
-    JHW[handle] =
-      print: (content) -> JHW.print(handle, content)
-      puts: (content) -> JHW.print(handle, content + "\n")
+    true
 
-  createHandle(handle) for handle in [ 'stdout', 'stderr', 'report' ]
+  window.prompt =  ->
+    warn "#{"[prompt]".foreground('red')} You should mock window.prompt. Returning true."
 
+    true
+
+  window.alert = (message) ->
+    warn "[alert] ".foreground('red') + message
+
+  # color support
+  JHW._setColors = (useColors) -> Intense.useColors = useColors
+
+  # console.log support
   JHW._usedConsole = false
-
   JHW.log = (msg) ->
     JHW.hasUsedConsole()
-    JHW.report.puts("CONSOLE||#{msg}")
+
+    for reporter in jasmine.getEnv().reporter.subReporters_
+      reporter.consoleLogUsed(msg) if reporter.consoleLogUsed?
+
     JHW._usedConsole = true
-    JHW.stdout.puts(msg)
+
+    puts msg
+
+  JHW.createCoffeeScriptFileException = (e) ->
+    if e and e.sourceURL
+      filename = e.sourceURL.split('/').pop()
+
+      e =
+        name: e.name
+        message: e.message
+        sourceURL: e.sourceURL
+        lineNumber: e.line
+
+      if window.CoffeeScriptToFilename and realFilename = window.CoffeeScriptToFilename[filename]
+        e.sourceURL = realFilename
+        e.lineNumber = "~" + String(e.line)
+
+    e
 
 window.CoffeeScriptToFilename = {}
 window.CSTF = window.CoffeeScriptToFilename

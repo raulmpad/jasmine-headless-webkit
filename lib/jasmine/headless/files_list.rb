@@ -4,6 +4,7 @@ require 'multi_json'
 require 'set'
 require 'sprockets'
 require 'sprockets/engines'
+require 'sprockets-vendor_gems'
 
 module Jasmine::Headless
   class FilesList
@@ -11,31 +12,8 @@ module Jasmine::Headless
 
     class << self
       def asset_paths
-        return @asset_paths if @asset_paths
-
-        require 'rubygems'
-
-        raise StandardError.new("A newer version of Rubygems is required to use vendored assets. Please upgrade.") if !Gem::Specification.respond_to?(:each)
-
-        @asset_paths = []
-
-        Gem::Specification.each { |gemspec| @asset_paths += get_paths_from_gemspec(gemspec) }
-
+        @asset_paths ||= Sprockets.find_gem_vendor_paths(:for => 'javascripts')
         add_haml_coffee_compiled_asset_path(@asset_paths) if defined?(HamlCoffeeAssets)
-
-        @asset_paths
-      end
-
-      def get_paths_from_gemspec(gemspec)
-        %w{vendor lib app}.collect do |dir|
-          path = File.join(gemspec.gem_dir, dir, "assets/javascripts")
-
-          if File.directory?(path) && !@asset_paths.include?(path)
-            path
-          else
-            nil
-          end
-        end.compact
       end
 
       def reset!
@@ -49,17 +27,13 @@ module Jasmine::Headless
           end
         end
 
-        begin
-          require 'bundler'
+        if ENV['JHW_ENV']
+          begin
+            require 'bundler'
 
-          envs = [ :default ]
-          %w{JHW_ENV RAILS_ENV RACK_ENV RAILS_GROUPS}.each do |env|
-            envs << ENV[env].to_sym if ENV[env]
+            Bundler.require(ENV['JHW_ENV'].to_sym)
+          rescue LoadError
           end
-
-          Bundler.require(*envs)
-        rescue LoadError
-        rescue StandardError => e #e.g. undefined constant errors, etc
         end
 
         # ...and unregister ones we don't want/need
@@ -74,7 +48,6 @@ module Jasmine::Headless
           register_engine '.jst', Jasmine::Headless::JSTTemplate
 
           if defined?(HamlCoffeeAssets)
-            register_engine '.hamlc', HamlCoffeeAssets::HamlCoffeeTemplate
 
             begin
               options = HamlCoffeeAssets::Engine::DEFAULT_CONFIG
@@ -128,7 +101,10 @@ module Jasmine::Headless
       end
 
       def default_files
-        %w{jasmine.js jasmine-html jasmine.css jasmine-extensions intense headless_reporter_result jasmine.HeadlessConsoleReporter jsDump beautify-html}
+        %w{jasmine.js jasmine-html jasmine.css jasmine-extensions
+           intense headless_reporter_result jasmine.HeadlessReporter
+           jasmine.HeadlessReporter.ConsoleBase
+           jsDump beautify-html}
       end
 
       def extension_filter
@@ -140,25 +116,33 @@ module Jasmine::Headless
 
     PLEASE_WAIT_IM_WORKING_TIME = 2
 
-    attr_reader :required_files, :potential_files_to_filter
+    attr_reader :options, :required_files, :potential_files_to_filter
 
     def initialize(options = {})
       @options = options
 
-      Kernel.srand(@options[:seed]) if @options[:seed]
+      Kernel.srand(options[:seed]) if options[:seed]
 
       @required_files = UniqueAssetList.new
       @potential_files_to_filter = []
 
+      load_initial_assets
+
+      use_config if config?
+    end
+
+    def load_initial_assets
       self.class.default_files.each do |file|
         begin
-          @required_files << sprockets_environment.find_asset(file, :bundle => false)
+          add_path(file)
         rescue InvalidUniqueAsset => e
           raise StandardError.new("Not an asset: #{file}")
         end
       end
 
-      use_config! if config?
+      (options[:reporters] || []).each do |reporter, identifier, file|
+        add_path("jasmine.HeadlessReporter.#{reporter}")
+      end
     end
 
     def files
@@ -184,6 +168,7 @@ module Jasmine::Headless
       @search_paths += asset_paths.collect { |dir| File.expand_path(dir) }
       @search_paths += spec_dir.collect { |dir| File.expand_path(dir) }
 
+      @search_paths.uniq!
       @search_paths
     end
 
@@ -261,7 +246,7 @@ module Jasmine::Headless
       'spec_files' => 'spec_dir'
     }
 
-    def use_config!
+    def use_config
       @config = @options[:config].dup
       @searches = {}
       @potential_files_to_filter = []
@@ -274,13 +259,13 @@ module Jasmine::Headless
     end
 
     def add_files(patterns, type, dirs)
-      dirs.product(patterns).each do |search|
-        files = expanded_dir(File.join(*search))
+      patterns.each do |pattern|
+        dirs.collect { |dir| expanded_dir(File.join(dir, pattern)) }.each do |files|
+          files.sort! { |a, b| Kernel.rand(3) - 1 } if type == 'spec_files'
 
-        files.sort! { |a, b| Kernel.rand(3) - 1 } if type == 'spec_files'
-
-        files.each do |path|
-          add_path(path, type)
+          files.each do |path|
+            add_path(path, type)
+          end
         end
       end
 
@@ -307,7 +292,7 @@ module Jasmine::Headless
       self.class.extension_filter
     end
 
-    def add_path(path, type)
+    def add_path(path, type = nil)
       asset = sprockets_environment.find_asset(path)
 
       @required_files << asset
@@ -318,7 +303,7 @@ module Jasmine::Headless
     end
 
     def src_dir
-      @src_dir ||= config_dir_or_pwd('src_dir')
+      @src_dir ||= config_dir_or_pwd('src_dir') + asset_paths
     end
 
     def spec_dir
@@ -326,7 +311,7 @@ module Jasmine::Headless
     end
 
     def asset_paths
-      @asset_paths ||= config_dir_or_pwd('asset_paths')
+      @asset_paths ||= config_dir('asset_paths')
     end
 
     def spec_file_searches
@@ -334,9 +319,15 @@ module Jasmine::Headless
     end
 
     def config_dir_or_pwd(dir)
-      found_dir = (@options[:config] && @options[:config][dir]) || Dir.pwd
+      if (found = config_dir(dir)).empty?
+        found = [ Dir.pwd ]
+      end
 
-      [ found_dir ].flatten.collect { |dir| File.expand_path(dir) }
+      found
+    end
+
+    def config_dir(dir)
+      [ @options[:config] && @options[:config][dir] ].flatten.compact.collect { |dir| File.expand_path(dir) }
     end
 
     def filter_for_requested_specs(files)

@@ -36,7 +36,6 @@ describe Jasmine::Headless::Runner do
 
     context 'file exists' do
       before do
-        File.open(Jasmine::Headless::Runner::RUNNER, 'w')
         File.open(config_filename, 'w') { |fh| fh.print YAML.dump('test' => 'hello', 'erb' => '<%= "erb" %>') }
       end
 
@@ -58,51 +57,48 @@ describe Jasmine::Headless::Runner do
   end
 
   describe '#jasmine_command' do
-    let(:opts) { {
-      :colors => true,
-      :report => 'test'
-    } }
+    subject { runner.jasmine_command(target) }
 
-    it 'should have the right options' do
-      runner.jasmine_command.should match(/jasmine-webkit-specrunner/)
-      runner.jasmine_command.should match(/-c/)
-      runner.jasmine_command.should match(/-r test/)
-      runner.jasmine_command('file.js').should match(/file.js/)
-    end
-  end
+    let(:target) { 'target' }
 
-  context 'real tests' do
-    let(:report) { 'spec/report.txt' }
+    let(:options) { {} }
+    let(:reporters) { [] }
 
     before do
-      FileUtils.rm_f report
+      runner.stubs(:options).returns(options)
+      options.stubs(:file_reporters).returns(reporters)
     end
 
-    after do
-      FileUtils.rm_f report
+    def self.it_should_have_basics
+      it { should include(target) }
     end
 
-    it 'should succeed with error code 0' do
-      Jasmine::Headless::Runner.run(
-        :jasmine_config => 'spec/jasmine/success/success.yml',
-        :report => report
-      ).should == 0
+    context 'colors' do
+      before do
+        options[:colors] = true
+      end
 
-      report.should be_a_report_containing(1, 0, false)
+      it_should_have_basics
+      it { should include('-c') }
     end
 
-    it 'should succeed but with javascript error' do
-      Jasmine::Headless::Runner.run(:jasmine_config => 'spec/jasmine/success_with_error/success_with_error.yml').should == 1
+    context 'reporters' do
+      let(:reporter) { [ 'Reporter', 'identifier', file ] }
+      let(:reporters) { [ reporter ] }
+
+      let(:file) { 'file' }
+
+      it_should_have_basics
+      it { should include("-r #{file}") }
     end
 
-    it 'should fail on one test' do
-      Jasmine::Headless::Runner.run(
-        :jasmine_config => 'spec/jasmine/failure/failure.yml',
-        :report => report
-      ).should == 1
+    context 'quiet' do
+      before do
+        options[:quiet] = true
+      end
 
-      report.should be_a_report_containing(1, 1, false)
-      report.should contain_a_failing_spec(['failure', 'should fail with error code of 1'])
+      it_should_have_basics
+      it { should include("-q") }
     end
   end
 
@@ -169,6 +165,83 @@ describe Jasmine::Headless::Runner do
 
     it 'should not merge in things with nil values' do
       runner.jasmine_config['spec_files'].should == described_class::JASMINE_DEFAULTS['spec_files']
+    end
+  end
+
+  describe '#files_list' do
+    subject { runner.files_list }
+
+    let(:options) { { :files => only, :seed => seed } }
+
+    let(:only) { 'only' }
+    let(:seed) { 12345 }
+    let(:jasmine_config) { 'jasmine config' }
+    let(:reporters) { [] }
+
+    before do
+      runner.stubs(:options).returns(options)
+      runner.stubs(:jasmine_config).returns(jasmine_config)
+
+      options.stubs(:reporters).returns(reporters)
+    end
+
+    it { should be_a_kind_of(Jasmine::Headless::FilesList) }
+
+    it 'should have settings' do
+      subject.options[:config].should == jasmine_config
+      subject.options[:only].should == only
+      subject.options[:seed].should == seed
+      subject.options[:reporters].should == reporters
+    end
+  end
+
+  describe '.server_port' do
+    before do
+      described_class.instance_variable_set(:@server_port, nil)
+    end
+
+    context 'port in use' do
+      require 'socket'
+
+      before do
+        described_class.stubs(:select_server_port).returns(5000, 5001)
+      end
+
+      it 'should try another port' do
+        server = TCPServer.new(described_class.server_interface, 5000)
+
+        described_class.server_port.should == 5001
+      end
+    end
+  end
+
+  describe '#absolute_run_targets' do
+    let(:opts) { {} }
+
+    subject { runner.absolute_run_targets(targets) }
+
+    let(:targets) { [ target ] }
+    let(:target) { 'target' }
+
+    before do
+      runner.stubs(:options).returns(:use_server => use_server)
+    end
+
+    context 'server' do
+      let(:use_server) { true }
+      let(:server_spec_path) { 'server spec path' }
+
+      before do
+        described_class.stubs(:server_spec_path).returns(server_spec_path)
+      end
+
+      it { should == [ server_spec_path + target ] }
+    end
+
+    context 'no server' do
+      let(:use_server) { false }
+
+      it { should == [ 'file://' + File.expand_path(target) ] }
     end
   end
 end

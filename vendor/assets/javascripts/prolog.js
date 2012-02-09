@@ -1,5 +1,5 @@
 (function() {
-  var createHandle, handle, _i, _len, _ref;
+  var puts, warn;
 
   if (window.JHW) {
     window.console = {
@@ -37,50 +37,67 @@
         return data;
       }
     };
+    puts = function(message) {
+      return JHW.print('stdout', message + "\n");
+    };
+    warn = function(message) {
+      if (!JHW.isQuiet()) return puts(message);
+    };
     window.onbeforeunload = function(e) {
       e = e || window.event;
       JHW.hasError();
-      JHW.stdout.puts('The code tried to leave the test page. Check for unhandled form submits and link clicks.');
+      warn("The code tried to leave the test page. Check for unhandled form submits and link clicks.");
       if (e) e.returnValue = 'string';
       return 'string';
     };
-    window.confirm = function(message) {
-      JHW.stderr.puts("" + ("[confirm]".foreground('red')) + " jasmine-headless-webkit can't handle confirm() yet! You should mock window.confirm. Returning true.");
+    JHW._hasErrors = false;
+    JHW._handleError = function(message, lineNumber, sourceURL) {
+      JHW.print('stderr', message + "\n");
+      JHW._hasErrors = true;
+      return false;
+    };
+    window.confirm = function() {
+      warn("" + ("[confirm]".foreground('red')) + " You should mock window.confirm. Returning true.");
+      return true;
+    };
+    window.prompt = function() {
+      warn("" + ("[prompt]".foreground('red')) + " You should mock window.prompt. Returning true.");
       return true;
     };
     window.alert = function(message) {
-      return JHW.stderr.puts("[alert] ".foreground('red') + message);
-    };
-    JHW._hasErrors = false;
-    JHW._handleError = function(message, lineNumber, sourceURL) {
-      JHW.stderr.puts(message);
-      JHW._hasErrors = true;
-      return false;
+      return warn("[alert] ".foreground('red') + message);
     };
     JHW._setColors = function(useColors) {
       return Intense.useColors = useColors;
     };
-    createHandle = function(handle) {
-      return JHW[handle] = {
-        print: function(content) {
-          return JHW.print(handle, content);
-        },
-        puts: function(content) {
-          return JHW.print(handle, content + "\n");
-        }
-      };
-    };
-    _ref = ['stdout', 'stderr', 'report'];
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      handle = _ref[_i];
-      createHandle(handle);
-    }
     JHW._usedConsole = false;
     JHW.log = function(msg) {
+      var reporter, _i, _len, _ref;
       JHW.hasUsedConsole();
-      JHW.report.puts("CONSOLE||" + msg);
+      _ref = jasmine.getEnv().reporter.subReporters_;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        reporter = _ref[_i];
+        if (reporter.consoleLogUsed != null) reporter.consoleLogUsed(msg);
+      }
       JHW._usedConsole = true;
-      return JHW.stdout.puts(msg);
+      return puts(msg);
+    };
+    JHW.createCoffeeScriptFileException = function(e) {
+      var filename, realFilename;
+      if (e && e.sourceURL) {
+        filename = e.sourceURL.split('/').pop();
+        e = {
+          name: e.name,
+          message: e.message,
+          sourceURL: e.sourceURL,
+          lineNumber: e.line
+        };
+        if (window.CoffeeScriptToFilename && (realFilename = window.CoffeeScriptToFilename[filename])) {
+          e.sourceURL = realFilename;
+          e.lineNumber = "~" + String(e.line);
+        }
+      }
+      return e;
     };
   }
 

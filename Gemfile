@@ -6,18 +6,25 @@ gemspec
 gem 'rspec'
 gem 'fakefs', :require => nil
 gem 'guard'
+
 gem 'guard-rspec'
 gem 'guard-shell'
 gem 'guard-coffeescript'
-gem 'growl'
-gem 'rake', '0.8.7'
-gem 'mocha', '0.9.12'
-gem 'guard-jasmine-headless-webkit', :git => 'git://github.com/johnbintz/guard-jasmine-headless-webkit.git'
-gem 'facter'
+gem 'guard-cucumber'
 
-gem 'jquery-rails'
+require 'rbconfig'
+case RbConfig::CONFIG['host_os']
+when /darwin/
+when /linux/
+  gem 'libnotify'
+end
+
+gem 'mocha'
+
+gem 'cucumber'
+
+gem 'jquery-rails', '~> 1.0.0'
 gem 'ejs'
 
-gem 'simplecov'
-#gem 'perftools.rb'
+gem 'guard-jasmine-headless-webkit', :git => 'git://github.com/johnbintz/guard-jasmine-headless-webkit.git'
 

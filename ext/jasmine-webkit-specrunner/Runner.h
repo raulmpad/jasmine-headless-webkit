@@ -7,7 +7,9 @@
 #include <QTextStream>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <QQueue>
+#include <QApplication>
 
 #include "Page.h"
 
@@ -20,7 +22,10 @@ class Runner: public QObject {
 
     Runner();
     void setColors(bool colors);
-    void reportFile(const QString &file);
+    void setReportFiles(QStack<QString> &files);
+    void setSeed(QString s);
+    void setQuiet(bool q);
+
     void addFile(const QString &spec);
     void go();
 
@@ -30,6 +35,10 @@ class Runner: public QObject {
     void hasUsedConsole();
     void hasError();
     void hasSpecFailure();
+
+    bool isQuiet();
+    QString getSeed();
+
     void print(const QString &fh, const QString &content);
     void finishSuite();
     void ping();
@@ -49,15 +58,16 @@ class Runner: public QObject {
     bool usedConsole;
     bool isFinished;
     bool useColors;
+    bool quiet;
+
+    QString seed;
 
     QQueue<QString> runnerFiles;
-
-    QString reportFileName;
+    QStack<QString> reportFiles;
 
     void loadSpec();
 
-    QFile *outputFile;
-    QTextStream *ts;
+    QQueue<QFile *> outputFiles;
 };
 
 #endif
