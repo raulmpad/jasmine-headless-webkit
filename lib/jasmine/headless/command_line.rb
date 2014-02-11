@@ -20,7 +20,7 @@ module Jasmine::Headless
         rescue CoffeeScript::CompilationError
           exit 1
         rescue StandardError => e
-          $stderr.puts "[%s] %s (%s)" % [ "jasmine-headless-webkit".color(:red), e.message.color(:white), e.class.name.color(:yellow) ]
+          $stderr.puts "[%s] %s (%s)" % [ "jasmine-headless-webkit", e.message.color(:white), e.class.name.color(:yellow) ]
           $stderr.puts e.backtrace.collect { |line| "  #{line}" }.join("\n")
           exit 1
         end
